@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "713667528425",
+    "project_id": "aviola-4adeb",
+    "storage_bucket": "aviola-4adeb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713667528425:android:edbaec4c5b01c8676ad278",
+        "android_client_info": {
+          "package_name": "com.aviola"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCG5FXqY7bSEPh3hIBxsot2uujttkPpya0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

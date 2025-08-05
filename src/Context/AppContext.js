@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApp } from '@react-native-firebase/app';
+import auth from '@react-native-firebase/auth';
 
 const AppContext = createContext();
 
@@ -65,69 +67,162 @@ export const AppProvider = ({ children }) => {
 
   const checkAuthState = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      if (token) {
-        dispatch({ type: 'SET_TOKEN', payload: token });
-        // TODO: Verify token with backend and get user data
-      }
+      console.log('🔥 Firebase Auth State Check Starting...');
+      
+      // Get Firebase app instance
+      const app = getApp();
+      console.log('🔥 Firebase App:', app.name);
+      
+      // Get auth instance for the app
+      const authInstance = auth(app);
+      console.log('🔥 Auth instance created');
+      
+      const unsubscribe = authInstance.onAuthStateChanged((user) => {
+        console.log('🔥 Auth State Changed:', user ? 'User logged in' : 'User logged out');
+        if (user) {
+          const userData = {
+            uid: user.uid,
+            email: user.email,
+            firstName: user.displayName?.split(' ')[0] || '',
+            lastName: user.displayName?.split(' ')[1] || '',
+          };
+          dispatch({ 
+            type: 'LOGIN_SUCCESS', 
+            payload: { 
+              user: userData, 
+              token: user.uid
+            } 
+          });
+        } else {
+          dispatch({ type: 'LOGOUT' });
+        }
+      });
+
+      return unsubscribe;
     } catch (error) {
-      console.error('Error checking auth state:', error);
+      console.error('🔥 Error checking auth state:', error);
     }
   };
 
   const login = async (email, password) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      console.log('🔥 Attempting login...');
+      const app = getApp();
+      const authInstance = auth(app);
+      
+      const userCredential = await authInstance.signInWithEmailAndPassword(email, password);
+      console.log('🔥 Login successful!', userCredential.user.email);
+      
+      const user = userCredential.user;
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        firstName: user.displayName?.split(' ')[0] || '',
+        lastName: user.displayName?.split(' ')[1] || '',
+      };
+
+      await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      
+      dispatch({ 
+        type: 'LOGIN_SUCCESS', 
+        payload: { 
+          user: userData, 
+          token: user.uid 
+        } 
       });
       
-      const data = await response.json();
-      
-      if (response.ok) {
-        await AsyncStorage.setItem('token', data.token);
-        dispatch({ type: 'LOGIN_SUCCESS', payload: data });
-        return { success: true };
-      } else {
-        dispatch({ type: 'SET_LOADING', payload: false });
-        return { success: false, message: data.message };
-      }
+      return { success: true };
     } catch (error) {
+      console.error('🔥 Login error:', error);
       dispatch({ type: 'SET_LOADING', payload: false });
-      return { success: false, message: 'Network error' };
+      
+      let errorMessage = 'Login failed';
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address';
+      }
+      
+      return { success: false, message: errorMessage };
     }
   };
 
   const register = async (userData) => {
+    console.log('🔥 Starting registration process...');
+    console.log('🔥 User data:', userData);
+    
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData),
+      const { firstName, lastName, email, password } = userData;
+      
+      console.log('🔥 Getting Firebase app instance...');
+      const app = getApp();
+      console.log('🔥 Getting auth instance...');
+      const authInstance = auth(app);
+      
+      console.log('🔥 Calling Firebase createUserWithEmailAndPassword...');
+      const userCredential = await authInstance.createUserWithEmailAndPassword(email, password);
+      console.log('🔥 User created successfully!', userCredential.user.uid);
+      
+      const user = userCredential.user;
+      
+      console.log('🔥 Updating user profile...');
+      await user.updateProfile({
+        displayName: `${firstName} ${lastName}`,
+      });
+      console.log('🔥 Profile updated successfully!');
+
+      const userDataFormatted = {
+        uid: user.uid,
+        email: user.email,
+        firstName,
+        lastName,
+      };
+
+      await AsyncStorage.setItem('userData', JSON.stringify(userDataFormatted));
+      
+      dispatch({ 
+        type: 'LOGIN_SUCCESS', 
+        payload: { 
+          user: userDataFormatted, 
+          token: user.uid 
+        } 
       });
       
-      const data = await response.json();
-      
-      if (response.ok) {
-        await AsyncStorage.setItem('token', data.token);
-        dispatch({ type: 'LOGIN_SUCCESS', payload: data });
-        return { success: true };
-      } else {
-        dispatch({ type: 'SET_LOADING', payload: false });
-        return { success: false, message: data.message };
-      }
+      console.log('🔥 Registration completed successfully!');
+      return { success: true };
     } catch (error) {
+      console.error('🔥 Registration error:', error);
+      console.error('🔥 Error code:', error.code);
+      console.error('🔥 Error message:', error.message);
       dispatch({ type: 'SET_LOADING', payload: false });
-      return { success: false, message: 'Network error' };
+      
+      let errorMessage = 'Registration failed';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'An account with this email already exists';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password is too weak';
+      }
+      
+      return { success: false, message: errorMessage };
     }
   };
 
   const logout = async () => {
-    await AsyncStorage.removeItem('token');
-    dispatch({ type: 'LOGOUT' });
+    try {
+      const app = getApp();
+      const authInstance = auth(app);
+      await authInstance.signOut();
+      await AsyncStorage.removeItem('userData');
+      dispatch({ type: 'LOGOUT' });
+    } catch (error) {
+      console.error('🔥 Logout error:', error);
+    }
   };
 
   const value = {
